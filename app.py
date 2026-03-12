@@ -6,11 +6,84 @@ Aplicación Flask con vistas relacionales inteligentes.
 
 import os
 import datetime
-from flask import Flask, render_template_string, jsonify, request
+from functools import wraps
+from flask import Flask, render_template_string, jsonify, request, session, redirect, url_for
 import dbfread
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'contper-dbf-2026-key')
+APP_PIN = os.environ.get('APP_PIN', 'silvana')
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def pin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get('authenticated'):
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'No autorizado'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+LOGIN_HTML = r"""
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acceso - Sistema de Sueldos</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.box{background:#1e293b;border:1px solid #475569;border-radius:12px;padding:40px;width:340px;text-align:center}
+.box h1{font-size:20px;margin-bottom:6px} .box h1 b{color:#38bdf8}
+.box p{font-size:13px;color:#94a3b8;margin-bottom:24px}
+.box input{width:100%;padding:12px;background:#0f172a;border:1px solid #475569;border-radius:8px;color:#e2e8f0;font-size:16px;text-align:center;letter-spacing:3px;outline:none;margin-bottom:16px}
+.box input:focus{border-color:#38bdf8}
+.box button{width:100%;padding:12px;background:#38bdf8;border:none;border-radius:8px;color:#0f172a;font-size:14px;font-weight:600;cursor:pointer}
+.box button:hover{background:#7dd3fc}
+.err{color:#f87171;font-size:13px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1><b>SILVANA</b></h1>
+  <p>Ingrese el PIN de acceso</p>
+  {% if error %}<div class="err">PIN incorrecto</div>{% endif %}
+  <form method="POST">
+    <input type="password" name="pin" placeholder="PIN" autofocus>
+    <button type="submit">Ingresar</button>
+  </form>
+</div>
+</body>
+</html>
+"""
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        if request.form.get('pin') == APP_PIN:
+            session['authenticated'] = True
+            return redirect(url_for('index'))
+        return render_template_string(LOGIN_HTML, error=True)
+    return render_template_string(LOGIN_HTML, error=False)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
+@app.route('/api/reload-cache', methods=['POST'])
+@pin_required
+def reload_cache():
+    _cache.clear()
+    return jsonify({'ok': True})
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -155,11 +228,13 @@ def resolve_empleado(emp):
 # ── API Routes ─────────────────────────────────────────────────────────────
 
 @app.route('/')
+@pin_required
 def index():
     return render_template_string(HTML_TEMPLATE)
 
 
 @app.route('/api/empresas')
+@pin_required
 def api_empresas():
     return jsonify(cached('api_empresas', _build_empresas_list))
 
@@ -209,6 +284,7 @@ def _build_empresas_list():
 
 
 @app.route('/api/empresa/<empr_dir>')
+@pin_required
 def api_empresa_detail(empr_dir):
     """Full empresa detail with CONTRIB data merged."""
     num = empr_dir.replace('EMPR', '').replace('Empr', '')
@@ -238,6 +314,7 @@ def api_empresa_detail(empr_dir):
 
 
 @app.route('/api/empresa/<empr_dir>/empleados')
+@pin_required
 def api_empleados(empr_dir):
     """Employees with resolved lookups."""
     path = empr_path(empr_dir, 'EMPLEADO.DBF')
@@ -248,6 +325,7 @@ def api_empleados(empr_dir):
 
 
 @app.route('/api/empresa/<empr_dir>/empleado/<int:numero>')
+@pin_required
 def api_empleado_detail(empr_dir, numero):
     """Single employee with all related data: sueldos, items, horas."""
     lk = get_lookups()
@@ -296,6 +374,7 @@ def api_empleado_detail(empr_dir, numero):
 
 
 @app.route('/api/empresa/<empr_dir>/liquidaciones')
+@pin_required
 def api_liquidaciones(empr_dir):
     """All liquidaciones with employee names and item totals."""
     lk = get_lookups()
@@ -334,6 +413,7 @@ def api_liquidaciones(empr_dir):
 
 
 @app.route('/api/empresa/<empr_dir>/boletas')
+@pin_required
 def api_boletas(empr_dir):
     """BPS boletas with their items."""
     lk = get_lookups()
@@ -361,6 +441,7 @@ def api_boletas(empr_dir):
 
 
 @app.route('/api/empresa/<empr_dir>/tabla/<name>')
+@pin_required
 def api_tabla_raw(empr_dir, name):
     """Raw table view for any table."""
     path = empr_path(empr_dir, name)
@@ -373,6 +454,7 @@ def api_tabla_raw(empr_dir, name):
 
 
 @app.route('/api/tabla/<name>')
+@pin_required
 def api_tabla_root(name):
     """Raw root table view."""
     path = root_path(name)
@@ -385,11 +467,13 @@ def api_tabla_root(name):
 
 
 @app.route('/api/lookups')
+@pin_required
 def api_lookups():
     return jsonify(get_lookups())
 
 
 @app.route('/api/root-tables')
+@pin_required
 def api_root_tables():
     files = []
     for f in sorted(os.listdir(DATA_DIR)):
@@ -453,14 +537,50 @@ td.n{text-align:right;font-variant-numeric:tabular-nums} td.d{color:var(--ylw)} 
 .ld{text-align:center;padding:40px;color:var(--tx2)} .er{color:var(--red);padding:14px;background:rgba(248,113,113,.1);border-radius:7px}
 .sec{margin-top:20px} .sec h3{font-size:14px;margin-bottom:10px;color:var(--tx)}
 .brc{font-size:12px;color:var(--tx2);margin-bottom:12px} .brc a{color:var(--ac);cursor:pointer;text-decoration:none} .brc a:hover{text-decoration:underline}
+.menu-btn{display:none;background:none;border:1px solid var(--brd);border-radius:5px;color:var(--tx);font-size:20px;padding:2px 8px;cursor:pointer;line-height:1}
+.sb-overlay{display:none}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+@media(max-width:768px){
+  .menu-btn{display:block}
+  .hdr{padding:10px 12px;gap:8px}
+  .hdr h1{font-size:15px}
+  .hdr .st{display:none}
+  .sb{position:fixed;left:-280px;top:0;bottom:0;z-index:200;transition:left .25s ease;width:280px;min-width:280px}
+  .sb.open{left:0}
+  .sb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;display:none}
+  .sb-overlay.open{display:block}
+  .lay{flex-direction:column}
+  .mn{padding:12px;overflow-x:hidden}
+  .mn h2{font-size:15px;margin-bottom:10px}
+  .cds{grid-template-columns:1fr 1fr;gap:8px}
+  .cd{padding:10px} .cd .vl{font-size:18px}
+  .det{grid-template-columns:1fr;padding:12px;gap:8px}
+  .tabs{gap:4px} .tab{padding:6px 10px;font-size:11px}
+  table{font-size:11px;min-width:600px}
+  thead th{padding:6px 8px;font-size:9px}
+  tbody td{padding:5px 8px;max-width:150px}
+  .tb{padding:8px 10px} .tb input{min-width:120px;font-size:12px}
+  .pg{flex-wrap:wrap} .pg button{padding:4px 8px;font-size:11px}
+  .sec h3{font-size:13px}
+  .brc{font-size:11px}
+}
+@media(max-width:400px){
+  .cds{grid-template-columns:1fr}
+  .hdr h1{font-size:13px}
+  table{min-width:500px}
+}
 </style>
 </head>
 <body>
 <div class="hdr">
-  <h1><b>CONTPER</b> Sistema de Sueldos</h1>
+  <button class="menu-btn" onclick="toggleSb()">&#9776;</button>
+  <h1><b>SILVANA</b> Sistema de Sueldos</h1>
   <div class="st" id="hst"></div>
+  <button onclick="reloadCache()" style="padding:5px 10px;background:var(--s2);border:1px solid var(--brd);border-radius:5px;color:var(--tx2);cursor:pointer;font-size:11px" title="Recargar datos (detectar nuevos archivos)">Recargar</button>
+  <a href="/logout" style="font-size:11px;color:var(--tx2);text-decoration:none">Salir</a>
 </div>
 <div class="lay">
+  <div class="sb-overlay" id="sbOverlay" onclick="toggleSb()"></div>
   <div class="sb" id="sb"></div>
   <div class="mn" id="mn"><div class="ld">Cargando...</div></div>
 </div>
@@ -507,7 +627,7 @@ function fltSb(t){
 
 // ── Dashboard ──
 function renderDash(){
-  S.v='dash';S.cur=null;renderSb();
+  S.v='dash';S.cur=null;renderSb();closeSb();
   const m=document.getElementById('mn');
   const te=S.empresas.reduce((s,e)=>s+(e._num_empleados||0),0);
   const lk=S.lk;
@@ -570,7 +690,7 @@ function fltDash(t){
 
 // ── Empresa Detail ──
 async function showEmp(dir){
-  S.v='emp';S.cur=dir;S.tab='general';renderSb();
+  S.v='emp';S.cur=dir;S.tab='general';renderSb();closeSb();
   const m=document.getElementById('mn');
   m.innerHTML='<div class="ld">Cargando empresa...</div>';
 
@@ -880,7 +1000,7 @@ async function showRawTbl(dir,name){
 
 // ── Tablas de Referencia ──
 async function showRef(){
-  S.v='ref';S.cur=null;renderSb();
+  S.v='ref';S.cur=null;renderSb();closeSb();
   const m=document.getElementById('mn');
   m.innerHTML='<div class="ld">Cargando tablas...</div>';
   const tables=await api('/api/root-tables');
@@ -979,6 +1099,21 @@ function trn(s,n){return s&&s.length>n?s.substring(0,n)+'...':s||'';}
 function fmtN(v){if(v===null||v===undefined)return'-';const n=Number(v);return isNaN(n)?String(v):n.toLocaleString('es-UY',{minimumFractionDigits:0,maximumFractionDigits:2});}
 function cd(l,v,s){return '<div class="cd"><div class="lb">'+l+'</div><div class="vl">'+v+'</div><div class="su">'+s+'</div></div>';}
 
+function toggleSb(){
+  document.getElementById('sb').classList.toggle('open');
+  document.getElementById('sbOverlay').classList.toggle('open');
+}
+function closeSb(){
+  document.getElementById('sb').classList.remove('open');
+  document.getElementById('sbOverlay').classList.remove('open');
+}
+
+async function reloadCache(){
+  await fetch('/api/reload-cache',{method:'POST'});
+  S={v:'dash',empresas:[],dirs:[],lk:{},cur:null,tab:null,sc:null,sa:true,ft:'',pg:0,_d:null};
+  await init();
+}
+
 init();
 </script>
 </body>
@@ -986,6 +1121,6 @@ init();
 """
 
 if __name__ == '__main__':
-    print("\n  CONTPER - Sistema de Sueldos")
+    print("\n  SILVANA - Sistema de Sueldos")
     print("  http://localhost:5001\n")
     app.run(host='0.0.0.0', port=5001, debug=False)

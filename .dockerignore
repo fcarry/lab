@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+.git
+.DS_Store
+*.zip
+*.EXE
+*.exe
+*.pdf
+*.doc
+*.emf
+hb_out.log
+Dockerfile
+.dockerignore
