@@ -536,6 +536,7 @@ td.n{text-align:right;font-variant-numeric:tabular-nums} td.d{color:var(--ylw)} 
 .pg button:hover{border-color:var(--ac)} .pg button:disabled{opacity:.3;cursor:default} .pg .pi{font-size:12px;color:var(--tx2)}
 .ld{text-align:center;padding:40px;color:var(--tx2)} .er{color:var(--red);padding:14px;background:rgba(248,113,113,.1);border-radius:7px}
 .sec{margin-top:20px} .sec h3{font-size:14px;margin-bottom:10px;color:var(--tx)}
+.liq-row:hover{background:var(--s2)}
 .brc{font-size:12px;color:var(--tx2);margin-bottom:12px} .brc a{color:var(--ac);cursor:pointer;text-decoration:none} .brc a:hover{text-decoration:underline}
 .menu-btn{display:none;background:none;border:1px solid var(--brd);border-radius:5px;color:var(--tx);font-size:20px;padding:2px 8px;cursor:pointer;line-height:1}
 .sb-overlay{display:none}
@@ -595,7 +596,8 @@ async function init(){
   const [emp,lk]=await Promise.all([api('/api/empresas'),api('/api/lookups')]);
   S.empresas=emp; S.lk=lk;
   S.dirs=emp.filter(e=>e._dir).map(e=>e._dir);
-  renderSb(); renderDash();
+  renderSb(); renderDash(true);
+  history.replaceState({v:'dash'},'');
 }
 
 // ── Sidebar ──
@@ -625,9 +627,23 @@ function fltSb(t){
   document.querySelectorAll('.sb-e').forEach(el=>{el.style.display=el.dataset.s.includes(tl)?'':'none'});
 }
 
+// ── History API ──
+function pushNav(state){
+  history.pushState(state,'');
+}
+window.addEventListener('popstate',function(e){
+  if(!e.state) return;
+  const st=e.state;
+  if(st.v==='dash') renderDash(true);
+  else if(st.v==='emp'){showEmp(st.dir,true,st.tab||'general');}
+  else if(st.v==='empleado'){showEmpleado(st.dir,st.num,true);}
+  else if(st.v==='ref') showRef(true);
+});
+
 // ── Dashboard ──
-function renderDash(){
+function renderDash(fromPop){
   S.v='dash';S.cur=null;renderSb();closeSb();
+  if(!fromPop) pushNav({v:'dash'});
   const m=document.getElementById('mn');
   const te=S.empresas.reduce((s,e)=>s+(e._num_empleados||0),0);
   const lk=S.lk;
@@ -689,8 +705,9 @@ function fltDash(t){
 }
 
 // ── Empresa Detail ──
-async function showEmp(dir){
-  S.v='emp';S.cur=dir;S.tab='general';renderSb();closeSb();
+async function showEmp(dir,fromPop,tab){
+  S.v='emp';S.cur=dir;S.tab=tab||'general';renderSb();closeSb();
+  if(!fromPop) pushNav({v:'emp',dir:dir,tab:S.tab});
   const m=document.getElementById('mn');
   m.innerHTML='<div class="ld">Cargando empresa...</div>';
 
@@ -720,7 +737,7 @@ function renderEmpTabs(data,dir){
   empTabContent(S.tab,data,dir);
 }
 
-function empTab(t){S.tab=t;empTabContent(t,S._emp,S.cur);}
+function empTab(t){S.tab=t;empTabContent(t,S._emp,S.cur);pushNav({v:'emp',dir:S.cur,tab:t});}
 
 async function empTabContent(tab,data,dir){
   const ct=document.getElementById('empContent');
@@ -817,8 +834,9 @@ function renderEmpTbl(){
   document.getElementById('tblC').innerHTML=h;
 }
 
-async function showEmpleado(dir,num){
+async function showEmpleado(dir,num,fromPop){
   S.v='empleado';S.cur=dir;renderSb();
+  if(!fromPop) pushNav({v:'empleado',dir:dir,num:num});
   const m=document.getElementById('mn');
   m.innerHTML='<div class="ld">Cargando empleado...</div>';
   const data=await api('/api/empresa/'+dir+'/empleado/'+num);
@@ -847,51 +865,65 @@ async function showEmpleado(dir,num){
   }
   h+='</div>';
 
-  // Liquidaciones
+  // Liquidaciones con items integrados (acordeon)
   if(data.sueldos.length){
-    h+='<div class="sec"><h3>Liquidaciones ('+data.sueldos.length+')</h3>';
-    h+='<div class="tw"><table><thead><tr><th>Fecha</th><th>Tipo Liquidacion</th><th>Nominal</th><th>Descuentos</th><th>Liquido</th><th>Gravado</th><th>Dias Trab.</th></tr></thead><tbody>';
-    for(const s of data.sueldos){
-      h+='<tr><td class="d">'+(s.FECHA||'-')+'</td>'
-        +'<td>'+esc(s._tip_liq||String(s.TIP_LIQ||''))+'</td>'
-        +'<td class="n">'+fmtN(s.NOMINAL)+'</td>'
-        +'<td class="n" style="color:var(--red)">'+fmtN(s.DESCUENTO)+'</td>'
-        +'<td class="n m">'+fmtN(s.SUELDO)+'</td>'
-        +'<td class="n">'+fmtN(s.GRAVADO)+'</td>'
-        +'<td class="n">'+(s.DIASTRAB||'-')+'</td></tr>';
-    }
-    h+='</tbody></table></div></div>';
-  }
-
-  // Items agrupados por liquidacion
-  if(data.items.length){
-    h+='<div class="sec"><h3>Detalle de Items ('+data.items.length+')</h3>';
-    // Group by fecha+tip_liq
-    const groups={};
+    // Index items by FECHA+TIP_LIQ
+    const itemsByLiq={};
     for(const it of data.items){
-      const k=(it.FECHA||'?')+' | '+(S.lk.tip_liq[String(it.TIP_LIQ||'').trim()]||'Tipo '+it.TIP_LIQ);
-      if(!groups[k])groups[k]=[];
-      groups[k].push(it);
+      const k=(it.FECHA||'')+'|'+it.TIP_LIQ;
+      if(!itemsByLiq[k])itemsByLiq[k]=[];
+      itemsByLiq[k].push(it);
     }
-    for(const[gk,its] of Object.entries(groups)){
-      h+='<h3 style="font-size:12px;color:var(--ac);margin:12px 0 6px">'+esc(gk)+'</h3>';
-      h+='<div class="tw"><table><thead><tr><th>Cod</th><th>Concepto</th><th>H/D</th><th>Importe</th><th>Gravada</th><th>Dias</th><th>Horas</th></tr></thead><tbody>';
-      let totH=0,totD=0;
-      for(const it of its){
-        const hd=it.HABODES==='H'?'Haber':it.HABODES==='D'?'Descuento':'';
-        const cls=it.HABODES==='H'?'tag-h':'tag-d';
-        const imp=it.IMPORTE||0;
-        if(it.HABODES==='H')totH+=imp; else totD+=imp;
-        h+='<tr><td class="n">'+it.CODIGO+'</td>'
-          +'<td>'+esc(it.TEXTO||it._tipo||'')+'</td>'
-          +'<td><span class="tag '+cls+'">'+hd+'</span></td>'
-          +'<td class="n'+(it.HABODES==='D'?' style="color:var(--red)"':'')+'">'+fmtN(imp)+'</td>'
-          +'<td>'+(it.GRAVADA==='S'?'Si':'No')+'</td>'
-          +'<td class="n">'+(it.DIAS||'-')+'</td>'
-          +'<td class="n">'+(it.HORAS||'-')+'</td></tr>';
+
+    h+='<div class="sec"><h3>Liquidaciones ('+data.sueldos.length+')</h3>';
+    h+='<p style="font-size:11px;color:var(--tx2);margin:-6px 0 10px">Click en una liquidacion para ver el detalle de items</p>';
+    for(let si=0;si<data.sueldos.length;si++){
+      const s=data.sueldos[si];
+      const liqKey=(s.FECHA||'')+'|'+s.TIP_LIQ;
+      const its=itemsByLiq[liqKey]||[];
+      const liqId='liq_'+si;
+
+      // Liquidacion header row
+      h+='<div class="tw" style="margin-bottom:8px">';
+      h+='<div class="liq-row" onclick="toggleLiq(\''+liqId+'\')" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:12px;flex-wrap:wrap">';
+      h+='<span class="liq-arrow" id="arr_'+liqId+'" style="color:var(--ac);font-size:14px;width:16px">&#9654;</span>';
+      h+='<span class="d" style="min-width:85px">'+(s.FECHA||'-')+'</span>';
+      h+='<span style="min-width:120px;color:var(--ac)"><b>'+esc(s._tip_liq||String(s.TIP_LIQ||''))+'</b></span>';
+      h+='<span style="min-width:80px">Nominal: <b>'+fmtN(s.NOMINAL)+'</b></span>';
+      h+='<span style="min-width:80px;color:var(--red)">Desc: <b>'+fmtN(s.DESCUENTO)+'</b></span>';
+      h+='<span style="min-width:80px;color:var(--grn)">Liquido: <b>'+fmtN(s.SUELDO)+'</b></span>';
+      h+='<span style="min-width:60px">Gravado: '+fmtN(s.GRAVADO)+'</span>';
+      if(s.DIASTRAB) h+='<span>'+s.DIASTRAB+' dias</span>';
+      if(its.length) h+='<span class="bg" style="font-size:10px">'+its.length+' items</span>';
+      h+='</div>';
+
+      // Items detail (hidden by default)
+      h+='<div id="'+liqId+'" style="display:none;border-top:1px solid var(--brd)">';
+      if(its.length){
+        let totH=0,totD=0;
+        h+='<table><thead><tr><th>Cod</th><th>Concepto</th><th>H/D</th><th>Importe</th><th>Gravada</th><th>Dias</th><th>Horas</th></tr></thead><tbody>';
+        for(const it of its){
+          const hd=it.HABODES==='H'?'Haber':it.HABODES==='D'?'Descuento':'';
+          const cls=it.HABODES==='H'?'tag-h':'tag-d';
+          const imp=it.IMPORTE||0;
+          if(it.HABODES==='H')totH+=imp; else totD+=imp;
+          h+='<tr><td class="n">'+it.CODIGO+'</td>'
+            +'<td>'+esc(it.TEXTO||it._tipo||'')+'</td>'
+            +'<td><span class="tag '+cls+'">'+hd+'</span></td>'
+            +'<td class="n'+(it.HABODES==='D'?' style="color:var(--red)"':'')+'">'+fmtN(imp)+'</td>'
+            +'<td>'+(it.GRAVADA==='S'?'Si':'No')+'</td>'
+            +'<td class="n">'+(it.DIAS||'-')+'</td>'
+            +'<td class="n">'+(it.HORAS||'-')+'</td></tr>';
+        }
+        h+='<tr style="font-weight:700;border-top:2px solid var(--brd);background:var(--s2)">'
+          +'<td></td><td>TOTALES</td><td></td>'
+          +'<td class="n"><span class="tag tag-h">H: '+fmtN(totH)+'</span> <span class="tag tag-d">D: '+fmtN(totD)+'</span></td>'
+          +'<td></td><td></td><td></td></tr>';
+        h+='</tbody></table>';
+      } else {
+        h+='<div style="padding:12px;color:var(--tx2);font-size:12px">Sin items para esta liquidacion</div>';
       }
-      h+='<tr style="font-weight:700;border-top:2px solid var(--brd)"><td></td><td>TOTALES</td><td></td><td class="n">H: '+fmtN(totH)+' / D: '+fmtN(totD)+'</td><td></td><td></td><td></td></tr>';
-      h+='</tbody></table></div>';
+      h+='</div></div>';
     }
     h+='</div>';
   }
@@ -999,8 +1031,9 @@ async function showRawTbl(dir,name){
 }
 
 // ── Tablas de Referencia ──
-async function showRef(){
+async function showRef(fromPop){
   S.v='ref';S.cur=null;renderSb();closeSb();
+  if(!fromPop) pushNav({v:'ref'});
   const m=document.getElementById('mn');
   m.innerHTML='<div class="ld">Cargando tablas...</div>';
   const tables=await api('/api/root-tables');
@@ -1098,6 +1131,13 @@ function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 function trn(s,n){return s&&s.length>n?s.substring(0,n)+'...':s||'';}
 function fmtN(v){if(v===null||v===undefined)return'-';const n=Number(v);return isNaN(n)?String(v):n.toLocaleString('es-UY',{minimumFractionDigits:0,maximumFractionDigits:2});}
 function cd(l,v,s){return '<div class="cd"><div class="lb">'+l+'</div><div class="vl">'+v+'</div><div class="su">'+s+'</div></div>';}
+
+function toggleLiq(id){
+  const el=document.getElementById(id);
+  const arr=document.getElementById('arr_'+id);
+  if(el.style.display==='none'){el.style.display='block';arr.innerHTML='&#9660;';}
+  else{el.style.display='none';arr.innerHTML='&#9654;';}
+}
 
 function toggleSb(){
   document.getElementById('sb').classList.toggle('open');
