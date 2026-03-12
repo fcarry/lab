@@ -20,7 +20,7 @@ from reportlab.lib.units import mm
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'contper-dbf-2026-key')
-APP_PIN = os.environ.get('APP_PIN', 'silvana')
+APP_PIN = os.environ.get('APP_PIN', 's.lvana')
 DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -497,6 +497,9 @@ def _build_empresas_list():
         e['_dir'] = d
         ep = empr_path(d, 'EMPLEADO.DBF')
         e['_num_empleados'] = dbf_count(ep) if os.path.exists(ep) else 0
+        # Borrado logico: EGREMPR='2' o FEC_EGR con valor => borrada/inactiva
+        egr = str(e.get('EGREMPR', '')).strip()
+        e['_activa'] = 'No' if egr == '2' or e.get('FEC_EGR') else 'Si'
         result.append(e)
 
     return result
@@ -914,9 +917,16 @@ td.n{text-align:right;font-variant-numeric:tabular-nums} td.d{color:var(--ylw)} 
 
 <script>
 const PS=50;
-let S={v:'dash',empresas:[],dirs:[],lk:{},cur:null,tab:null,sc:null,sa:true,ft:'',pg:0,_d:null};
+let S={v:'dash',empresas:[],dirs:[],lk:{},cur:null,tab:null,sc:null,sa:true,ft:'',pg:0,_d:null,ef:'activas'};
 
 async function api(u){const r=await fetch(u);return r.json()}
+
+function filteredEmpresas(){
+  if(S.ef==='activas') return S.empresas.filter(e=>e._activa==='Si');
+  if(S.ef==='borradas') return S.empresas.filter(e=>e._activa!=='Si');
+  return S.empresas;
+}
+function setEf(v){S.ef=v;renderSb();renderDash(true);}
 
 function dlBar(dir,tab){
   return '<div class="dl-bar"><span>Descargar:</span>'
@@ -940,23 +950,31 @@ async function init(){
 // ── Sidebar ──
 function renderSb(){
   const sb=document.getElementById('sb');
+  const fe=filteredEmpresas();
   let h='<a onclick="renderDash()" class="'+(S.v==='dash'?'ac':'')+'">Dashboard</a>';
-  h+='<h3>Empresas ('+S.empresas.length+')</h3>';
+  h+='<h3>Empresas ('+fe.length+')</h3>';
+  h+='<div style="display:flex;gap:3px;margin:4px 10px 6px;flex-wrap:wrap">';
+  h+='<span class="tab'+(S.ef==='activas'?' ac':'')+'" onclick="setEf(\'activas\')" style="padding:3px 8px;font-size:10px">Activas</span>';
+  h+='<span class="tab'+(S.ef==='borradas'?' ac':'')+'" onclick="setEf(\'borradas\')" style="padding:3px 8px;font-size:10px">Borradas</span>';
+  h+='<span class="tab'+(S.ef==='todas'?' ac':'')+'" onclick="setEf(\'todas\')" style="padding:3px 8px;font-size:10px">Todas</span>';
+  h+='</div>';
   h+='<input placeholder="Buscar empresa..." oninput="fltSb(this.value)" id="sflt">';
-  for(const e of S.empresas){
+  for(const e of fe){
     const d=e._dir; if(!d) continue;
     const nm=e.NOMBRE||e.FANTASIA||d;
     const ac=S.v==='emp'&&S.cur===d?'ac':'';
+    const st=e._activa==='Si'?'':'<span style="font-size:9px;color:var(--red);margin-left:2px">&#x2717;</span>';
     h+='<a class="sb-e '+ac+'" onclick="showEmp(\''+d+'\')" data-s="'+(nm+' '+d+' '+(e.GIRO||'')).toLowerCase()+'">'
-      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(nm)+'">'+esc(trn(nm,28))+'</span>'
+      +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(nm)+'">'+esc(trn(nm,26))+st+'</span>'
       +'<span class="bg">'+e._num_empleados+'</span></a>';
   }
   h+='<h3>Tablas de Referencia</h3>';
   h+='<a onclick="showRef()" class="'+(S.v==='ref'?'ac':'')+'">Ver Tablas Maestras</a>';
   sb.innerHTML=h;
-  const t=S.empresas.length;
-  const te=S.empresas.reduce((s,e)=>s+(e._num_empleados||0),0);
-  document.getElementById('hst').innerHTML='<span><em>'+t+'</em> empresas</span><span><em>'+te+'</em> empleados</span>';
+  const ta=S.empresas.filter(e=>e._activa==='Si').length;
+  const tb=S.empresas.length-ta;
+  const te=fe.reduce((s,e)=>s+(e._num_empleados||0),0);
+  document.getElementById('hst').innerHTML='<span><em>'+ta+'</em> activas</span><span><em>'+tb+'</em> borradas</span><span><em>'+te+'</em> empleados</span>';
 }
 
 function fltSb(t){
@@ -982,43 +1000,52 @@ function renderDash(fromPop){
   S.v='dash';S.cur=null;renderSb();closeSb();
   if(!fromPop) pushNav({v:'dash'});
   const m=document.getElementById('mn');
-  const te=S.empresas.reduce((s,e)=>s+(e._num_empleados||0),0);
+  const fe=filteredEmpresas();
+  const te=fe.reduce((s,e)=>s+(e._num_empleados||0),0);
   const lk=S.lk;
+  const ta=S.empresas.filter(e=>e._activa==='Si').length;
+  const tb=S.empresas.length-ta;
   let h='<h2>Dashboard General</h2>';
   h+='<div class="cds">';
-  h+=cd('Empresas',S.empresas.length,'registradas');
-  h+=cd('Empleados',te,'en todas las empresas');
+  h+=cd('Total Empresas',S.empresas.length,'registradas');
+  h+=cd('Activas',ta,'empresas activas');
+  h+=cd('Borradas',tb,'empresas borradas');
+  h+=cd('Empleados',te,'en empresas filtradas');
   h+=cd('Departamentos',Object.keys(lk.deptos||{}).length,'del Uruguay');
   h+=cd('Grupos Salariales',Object.keys(lk.grupos||{}).length,'consejos de salarios');
   h+='</div>';
 
-  // Top empresas by employees
-  const top=[...S.empresas].sort((a,b)=>(b._num_empleados||0)-(a._num_empleados||0)).slice(0,10);
+  // Top empresas by employees (from filtered)
+  const top=[...fe].sort((a,b)=>(b._num_empleados||0)-(a._num_empleados||0)).slice(0,10);
   h+='<div class="sec"><h3>Empresas con Mas Empleados</h3>';
-  h+='<div class="tw"><table><thead><tr><th>Empresa</th><th>Giro</th><th>Departamento</th><th>Grupo</th><th>Empleados</th><th>Desde</th></tr></thead><tbody>';
+  h+='<div class="tw"><table><thead><tr><th>Empresa</th><th>Giro</th><th>Departamento</th><th>Grupo</th><th>Empleados</th><th>Estado</th><th>Desde</th></tr></thead><tbody>';
   for(const e of top){
+    const stTag=e._activa==='Si'?'<span class="tag tag-h">Activa</span>':'<span class="tag tag-d">Borrada</span>';
     h+='<tr class="click" onclick="showEmp(\''+e._dir+'\')">'
       +'<td><b>'+esc(e.NOMBRE||'')+'</b></td>'
       +'<td>'+esc(e.GIRO||'')+'</td>'
       +'<td>'+esc(e._depto_nombre||e.DEPARTAM||'')+'</td>'
       +'<td>'+esc(e._grupo_nombre||'Grupo '+(e.GRUPO||'').trim())+'</td>'
       +'<td class="n m">'+e._num_empleados+'</td>'
+      +'<td>'+stTag+'</td>'
       +'<td class="d">'+(e.FEC_INI||'-')+'</td></tr>';
   }
   h+='</tbody></table></div></div>';
 
-  // All empresas
-  h+='<div class="sec"><h3>Todas las Empresas</h3>';
-  h+='<div class="tw"><div class="tb"><input placeholder="Filtrar empresas..." oninput="fltDash(this.value)"><span class="nf">'+S.empresas.length+' empresas</span></div>';
+  // All empresas (filtered)
+  const label={activas:'Empresas Activas',borradas:'Empresas Borradas',todas:'Todas las Empresas'}[S.ef];
+  h+='<div class="sec"><h3>'+label+'</h3>';
+  h+='<div class="tw"><div class="tb"><input placeholder="Filtrar empresas..." oninput="fltDash(this.value)"><span class="nf">'+fe.length+' empresas</span></div>';
   h+='<div id="dashTbl"></div></div></div>';
   m.innerHTML=h;
-  renderDashTbl(S.empresas);
+  renderDashTbl(fe);
 }
 
 function renderDashTbl(data){
-  let h='<table><thead><tr><th>NUM</th><th>Nombre</th><th>Fantasia</th><th>Giro</th><th>RUC</th><th>BPS</th><th>Departamento</th><th>Grupo</th><th>Aporte</th><th>Empleados</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th>NUM</th><th>Nombre</th><th>Fantasia</th><th>Giro</th><th>RUC</th><th>BPS</th><th>Departamento</th><th>Grupo</th><th>Aporte</th><th>Empleados</th><th>Estado</th></tr></thead><tbody>';
   for(const e of data){
     if(!e._dir) continue;
+    const stTag=e._activa==='Si'?'<span class="tag tag-h">Activa</span>':'<span class="tag tag-d">Borrada</span>';
     h+='<tr class="click" onclick="showEmp(\''+e._dir+'\')">'
       +'<td class="n">'+e.NUM_EMP+'</td>'
       +'<td>'+esc(e.NOMBRE||'')+'</td>'
@@ -1029,7 +1056,8 @@ function renderDashTbl(data){
       +'<td>'+esc(e._depto_nombre||'')+'</td>'
       +'<td>'+esc(e._grupo_nombre||'')+'</td>'
       +'<td>'+esc(e._aporte_nombre||'')+'</td>'
-      +'<td class="n m">'+(e._num_empleados||0)+'</td></tr>';
+      +'<td class="n m">'+(e._num_empleados||0)+'</td>'
+      +'<td>'+stTag+'</td></tr>';
   }
   h+='</tbody></table>';
   document.getElementById('dashTbl').innerHTML=h;
@@ -1037,7 +1065,7 @@ function renderDashTbl(data){
 
 function fltDash(t){
   const tl=t.toLowerCase();
-  const f=S.empresas.filter(e=>JSON.stringify(e).toLowerCase().includes(tl));
+  const f=filteredEmpresas().filter(e=>JSON.stringify(e).toLowerCase().includes(tl));
   renderDashTbl(f);
 }
 
@@ -1108,7 +1136,7 @@ function renderEmpGeneral(ct,data){
     ['Firmante',c.FIRMANTE],['CI Firmante',c.CED_FIRMA],['Caracter',c.CARACTER],
     ['Cert. BPS',e.CERTBPS],['Cert. DGI',e.CERTDGI],['Fecha MTSS',e.FEC_MTSS||c.FEC_MTSS],
     ['Exonerada',c.EXONERADA],['Construccion',c.CONST],['Manufactura',c.MANUFAC],
-    ['Franja BPS',e.FRANJABPS],['THA',c.THA||e.THA],
+    ['Franja BPS',e.FRANJABPS],['THA',c.THA||e.THA],['Estado',e.EGREMPR==='2'?'Borrada':'Activa'],
   ];
   for(const[k,v] of pairs){
     if(v && String(v).trim() && v!=='N') h+='<div class="f"><div class="k">'+k+'</div><div class="v">'+esc(String(v))+'</div></div>';
@@ -1491,7 +1519,7 @@ function closeSb(){
 
 async function reloadCache(){
   await fetch('/api/reload-cache',{method:'POST'});
-  S={v:'dash',empresas:[],dirs:[],lk:{},cur:null,tab:null,sc:null,sa:true,ft:'',pg:0,_d:null};
+  S={v:'dash',empresas:[],dirs:[],lk:{},cur:null,tab:null,sc:null,sa:true,ft:'',pg:0,_d:null,ef:S.ef||'activas'};
   await init();
 }
 
