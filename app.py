@@ -5,10 +5,18 @@ Aplicación Flask con vistas relacionales inteligentes.
 """
 
 import os
+import io
 import datetime
 from functools import wraps
-from flask import Flask, render_template_string, jsonify, request, session, redirect, url_for
+from flask import Flask, render_template_string, jsonify, request, session, redirect, url_for, send_file
 import dbfread
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'contper-dbf-2026-key')
@@ -223,6 +231,217 @@ def resolve_empleado(emp):
     e['_compesp'] = lk['compesp'].get(str(e.get('COMPESP', '')).strip(), '')
     e['_activo'] = 'No' if e.get('EGRESO') == '1' or e.get('FEC_EGR') else 'Si'
     return e
+
+
+# ── Export Helpers ─────────────────────────────────────────────────────────
+
+def _cell_str(v):
+    if v is None:
+        return ''
+    if isinstance(v, (list, dict)):
+        return str(v)
+    return str(v)
+
+
+def make_excel(title, headers, rows):
+    """Create an xlsx in memory and return a BytesIO."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = title[:31]  # max 31 chars for sheet name
+
+    # Header style
+    hfont = Font(bold=True, color='FFFFFF', size=10)
+    hfill = PatternFill(start_color='1e293b', end_color='1e293b', fill_type='solid')
+    halign = Alignment(horizontal='center', vertical='center')
+    thin = Side(style='thin', color='475569')
+    hborder = Border(bottom=thin)
+
+    for c, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=c, value=h)
+        cell.font = hfont
+        cell.fill = hfill
+        cell.alignment = halign
+        cell.border = hborder
+
+    for r, row in enumerate(rows, 2):
+        for c, val in enumerate(row, 1):
+            cell = ws.cell(row=r, column=c, value=val if not isinstance(val, str) else val)
+            if isinstance(val, (int, float)):
+                cell.number_format = '#,##0.00'
+
+    # Auto-width
+    for c in range(1, len(headers) + 1):
+        max_len = len(str(headers[c - 1]))
+        for r in range(2, min(len(rows) + 2, 102)):
+            cell_val = ws.cell(row=r, column=c).value
+            if cell_val:
+                max_len = max(max_len, len(str(cell_val)))
+        ws.column_dimensions[ws.cell(row=1, column=c).column_letter].width = min(max_len + 3, 40)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def make_pdf(title, headers, rows):
+    """Create a PDF in memory with a table and return a BytesIO."""
+    buf = io.BytesIO()
+    page_size = landscape(A4) if len(headers) > 6 else A4
+    doc = SimpleDocTemplate(buf, pagesize=page_size, leftMargin=15*mm, rightMargin=15*mm,
+                            topMargin=15*mm, bottomMargin=15*mm)
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('title2', parent=styles['Heading1'], fontSize=14,
+                                  textColor=colors.HexColor('#1e293b'), spaceAfter=10)
+    cell_style = ParagraphStyle('cell', fontSize=7, leading=9)
+
+    elements = [Paragraph(title, title_style), Spacer(1, 5*mm)]
+
+    # Truncate rows for PDF to avoid huge files
+    max_rows = min(len(rows), 2000)
+    table_data = [[Paragraph(str(h), ParagraphStyle('hdr', fontSize=7, leading=9, textColor=colors.white))
+                   for h in headers]]
+    for row in rows[:max_rows]:
+        table_data.append([Paragraph(_cell_str(v)[:60], cell_style) for v in row])
+
+    # Column widths
+    avail = page_size[0] - 30*mm
+    col_w = avail / len(headers)
+    col_widths = [col_w] * len(headers)
+
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e293b')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 7),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#94a3b8')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f1f5f9')]),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+    ]))
+    elements.append(t)
+
+    if len(rows) > max_rows:
+        elements.append(Spacer(1, 5*mm))
+        elements.append(Paragraph(f'... mostrando {max_rows} de {len(rows)} registros', cell_style))
+
+    doc.build(elements)
+    buf.seek(0)
+    return buf
+
+
+def _emp_general_rows(empr_dir):
+    """Return (headers, rows) for empresa general data."""
+    num = empr_dir.replace('EMPR', '').replace('Empr', '')
+    emp = next((e for e in get_empresas() if str(e.get('NUM_EMP', '')) == num), {})
+    empresa = resolve_empresa(emp)
+    contrib_path = empr_path(empr_dir, 'CONTRIB.DBF')
+    contrib = {}
+    if os.path.exists(contrib_path):
+        recs = read_dbf_records(contrib_path)
+        if recs:
+            contrib = recs[0]
+            lk = get_lookups()
+            contrib['_natjur'] = lk['natjur'].get(str(contrib.get('NATU_JUR', '')).strip(), '')
+            contrib['_depto'] = lk['deptos'].get(str(contrib.get('DEPARTAM', '')).strip(), str(contrib.get('DEPARTAM', '')))
+            contrib['_aporte'] = lk['aporte'].get(str(contrib.get('TIP_APOR', '')).strip(), '')
+    e, c = empresa, contrib
+    pairs = [
+        ['Nombre', e.get('NOMBRE')], ['Fantasia', e.get('FANTASIA')], ['Giro', e.get('GIRO') or c.get('GIRO')],
+        ['Direccion', c.get('DOM_CONS') or e.get('DIR')], ['Dir. Fiscal', c.get('DOM_FIS')],
+        ['Telefono', c.get('TEL') or e.get('TEL')],
+        ['RUC', e.get('RUC') or c.get('RUC')], ['BPS', e.get('BPS') or c.get('BPS')],
+        ['BSE', e.get('BSE') or c.get('BSE')], ['MTSS', e.get('MTSS') or c.get('MTSS')],
+        ['Departamento', e.get('_depto_nombre') or c.get('_depto') or c.get('DEPARTAM')],
+        ['Grupo Salarial', e.get('_grupo_nombre') or e.get('GRUPO')],
+        ['Naturaleza Juridica', c.get('_natjur') or c.get('NATU_JUR')],
+        ['Tipo Aporte', e.get('_aporte_nombre') or c.get('_aporte')],
+        ['Fecha Inicio', e.get('FEC_INI')], ['Firmante', c.get('FIRMANTE')],
+    ]
+    headers = ['Campo', 'Valor']
+    rows = [[k, _cell_str(v)] for k, v in pairs if v and str(v).strip()]
+    return headers, rows
+
+
+def _emp_empleados_rows(empr_dir):
+    path = empr_path(empr_dir, 'EMPLEADO.DBF')
+    if not os.path.exists(path):
+        return [], []
+    records = [resolve_empleado(r) for r in read_dbf_records(path)]
+    headers = ['Num', 'Nombre', 'CI', 'Cargo', 'Tipo Sueldo', 'Sueldo', 'Ingreso', 'Egreso', 'Activo', 'Seg. Salud']
+    rows = []
+    for e in records:
+        rows.append([
+            e.get('NUMERO'), e.get('_nombre_completo', ''), e.get('CED_IDEN', ''),
+            _cell_str(e.get('CARGO', '')).strip(), e.get('_tip_suel', ''),
+            e.get('SUELD'), e.get('FEC_ING', ''), e.get('FEC_EGR', ''),
+            e.get('_activo', ''), e.get('_segsal', ''),
+        ])
+    return headers, rows
+
+
+def _emp_liquidaciones_rows(empr_dir):
+    lk = get_lookups()
+    emp_p = empr_path(empr_dir, 'EMPLEADO.DBF')
+    empleados = read_dbf_records(emp_p) if os.path.exists(emp_p) else []
+    emp_map = {}
+    for e in empleados:
+        n = e.get('NUMERO')
+        nombre = ' '.join(filter(None, [str(e.get('APELLIDO1', '')).strip(), str(e.get('APELLIDO2', '')).strip(),
+                                         str(e.get('NOMBRE1', '')).strip()]))
+        emp_map[n] = nombre
+    sue_path = empr_path(empr_dir, 'SUELDOS.DBF')
+    sueldos = read_dbf_records(sue_path) if os.path.exists(sue_path) else []
+    headers = ['Fecha', 'Empleado', 'CI', 'Tipo Liq.', 'Nominal', 'Descuentos', 'Liquido', 'Gravado', 'Dias']
+    rows = []
+    for s in sorted(sueldos, key=lambda x: x.get('FECHA', '') or '', reverse=True):
+        rows.append([
+            s.get('FECHA', ''), emp_map.get(s.get('NUMERO'), '?'), s.get('CED_IDEN', ''),
+            lk['tip_liq'].get(str(s.get('TIP_LIQ', '')).strip(), ''),
+            s.get('NOMINAL'), s.get('DESCUENTO'), s.get('SUELDO'), s.get('GRAVADO'),
+            s.get('DIASTRAB', ''),
+        ])
+    return headers, rows
+
+
+def _emp_boletas_rows(empr_dir):
+    lk = get_lookups()
+    bol_path = empr_path(empr_dir, 'BOL_BPS.DBF')
+    boletas = read_dbf_records(bol_path) if os.path.exists(bol_path) else []
+    item_path = empr_path(empr_dir, 'ITEM_BPS.DBF')
+    items = read_dbf_records(item_path) if os.path.exists(item_path) else []
+    items_by_bol = {}
+    for it in items:
+        key = (str(it.get('TIP_BOL', '')), str(it.get('FEC_CARGO', '')))
+        items_by_bol.setdefault(key, []).append(it)
+    headers = ['Boleta', 'Fec. Cargo', 'Fec. Venc.', 'Importe', 'Empleados', 'Mto. Patronal', 'Mto. Personal',
+               'Item Cod.', 'Item Concepto', 'Mto. Gravado', '%', 'Aporte']
+    rows = []
+    for b in sorted(boletas, key=lambda x: x.get('FEC_CARGO', '') or '', reverse=True):
+        key = (str(b.get('TIP_BOL', '')), str(b.get('FEC_CARGO', '')))
+        b_items = items_by_bol.get(key, [])
+        if b_items:
+            for i, it in enumerate(b_items):
+                rows.append([
+                    b.get('SEYNROBOL', '') if i == 0 else '',
+                    b.get('FEC_CARGO', '') if i == 0 else '',
+                    b.get('FEC_VENC', '') if i == 0 else '',
+                    b.get('IMPORTE') if i == 0 else '',
+                    b.get('CANT_EMP') if i == 0 else '',
+                    b.get('MONTO_PAT') if i == 0 else '',
+                    b.get('MONTO_PER') if i == 0 else '',
+                    it.get('CODIGO', ''), _cell_str(it.get('TEXTO', '')),
+                    it.get('MONTOGRAV'), it.get('LEY_PORC', ''), it.get('APORTE'),
+                ])
+        else:
+            rows.append([
+                b.get('SEYNROBOL', ''), b.get('FEC_CARGO', ''), b.get('FEC_VENC', ''),
+                b.get('IMPORTE'), b.get('CANT_EMP'), b.get('MONTO_PAT'), b.get('MONTO_PER'),
+                '', '', '', '', '',
+            ])
+    return headers, rows
 
 
 # ── API Routes ─────────────────────────────────────────────────────────────
@@ -453,6 +672,109 @@ def api_tabla_raw(empr_dir, name):
     return jsonify({'fields': fields, 'records': records})
 
 
+# ── Export Routes ──────────────────────────────────────────────────────────
+
+@app.route('/api/empresa/<empr_dir>/export/<tab>/<fmt>')
+@pin_required
+def api_export(empr_dir, tab, fmt):
+    """Export empresa data as Excel or PDF."""
+    # Get empresa name for file title
+    num = empr_dir.replace('EMPR', '').replace('Empr', '')
+    emp = next((e for e in get_empresas() if str(e.get('NUM_EMP', '')) == num), {})
+    emp_name = str(emp.get('NOMBRE', empr_dir)).strip() or empr_dir
+
+    if tab == 'general':
+        headers, rows = _emp_general_rows(empr_dir)
+        title = f'{emp_name} - Datos Generales'
+    elif tab == 'empleados':
+        headers, rows = _emp_empleados_rows(empr_dir)
+        title = f'{emp_name} - Empleados'
+    elif tab == 'liquidaciones':
+        headers, rows = _emp_liquidaciones_rows(empr_dir)
+        title = f'{emp_name} - Liquidaciones'
+    elif tab == 'boletas':
+        headers, rows = _emp_boletas_rows(empr_dir)
+        title = f'{emp_name} - Boletas BPS'
+    else:
+        return jsonify({'error': 'Tab no valido'}), 400
+
+    safe_name = ''.join(c for c in emp_name if c.isalnum() or c in ' _-')[:40].strip()
+
+    if fmt == 'excel':
+        buf = make_excel(title, headers, rows)
+        return send_file(buf, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         as_attachment=True, download_name=f'{safe_name}_{tab}.xlsx')
+    elif fmt == 'pdf':
+        buf = make_pdf(title, headers, rows)
+        return send_file(buf, mimetype='application/pdf',
+                         as_attachment=True, download_name=f'{safe_name}_{tab}.pdf')
+    else:
+        return jsonify({'error': 'Formato no valido'}), 400
+
+
+@app.route('/api/empresa/<empr_dir>/empleado/<int:numero>/export/<fmt>')
+@pin_required
+def api_export_empleado(empr_dir, numero, fmt):
+    """Export single employee data."""
+    lk = get_lookups()
+    emp_p = empr_path(empr_dir, 'EMPLEADO.DBF')
+    empleados = read_dbf_records(emp_p) if os.path.exists(emp_p) else []
+    empleado = next((resolve_empleado(e) for e in empleados if e.get('NUMERO') == numero), None)
+    if not empleado:
+        return jsonify({'error': 'Empleado no encontrado'}), 404
+
+    name = empleado.get('_nombre_completo', str(numero))
+    title = f'{name} - Datos y Liquidaciones'
+
+    # Info rows
+    info_pairs = [
+        ['CI', empleado.get('CED_IDEN')], ['Cargo', empleado.get('CARGO')],
+        ['Fecha Ingreso', empleado.get('FEC_ING')], ['Fecha Egreso', empleado.get('FEC_EGR')],
+        ['Tipo Sueldo', empleado.get('_tip_suel')], ['Sueldo', empleado.get('SUELD')],
+        ['Activo', empleado.get('_activo')],
+    ]
+    info_rows = [[k, _cell_str(v)] for k, v in info_pairs if v and str(v).strip()]
+
+    # Sueldos
+    sue_path = empr_path(empr_dir, 'SUELDOS.DBF')
+    sueldos_raw = read_dbf_records(sue_path) if os.path.exists(sue_path) else []
+    sueldos = [dict(s) for s in sueldos_raw if s.get('NUMERO') == numero]
+    for s in sueldos:
+        s['_tip_liq'] = lk['tip_liq'].get(str(s.get('TIP_LIQ', '')).strip(), '')
+    sueldos.sort(key=lambda x: x.get('FECHA', '') or '', reverse=True)
+
+    # Items
+    item_path = empr_path(empr_dir, 'ITEM_SUE.DBF')
+    items_raw = read_dbf_records(item_path) if os.path.exists(item_path) else []
+    items = [dict(it) for it in items_raw if it.get('NUMERO') == numero]
+
+    # Build combined table
+    headers = ['Fecha', 'Tipo Liq.', 'Concepto', 'H/D', 'Nominal', 'Descuento', 'Liquido', 'Importe']
+    rows = []
+    for s in sueldos:
+        liq_key = (s.get('FECHA', ''), s.get('TIP_LIQ'))
+        rows.append([s.get('FECHA', ''), s.get('_tip_liq', ''), '** LIQUIDACION **', '',
+                     s.get('NOMINAL'), s.get('DESCUENTO'), s.get('SUELDO'), ''])
+        liq_items = [it for it in items if it.get('FECHA') == s.get('FECHA') and it.get('TIP_LIQ') == s.get('TIP_LIQ')]
+        for it in liq_items:
+            hd = 'Haber' if it.get('HABODES') == 'H' else 'Descuento' if it.get('HABODES') == 'D' else ''
+            rows.append(['', '', _cell_str(it.get('TEXTO', '')).strip() or str(it.get('CODIGO', '')),
+                         hd, '', '', '', it.get('IMPORTE')])
+
+    safe_name = ''.join(c for c in name if c.isalnum() or c in ' _-')[:40].strip()
+
+    if fmt == 'excel':
+        buf = make_excel(title, headers, rows)
+        return send_file(buf, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                         as_attachment=True, download_name=f'{safe_name}_liquidaciones.xlsx')
+    elif fmt == 'pdf':
+        buf = make_pdf(title, headers, rows)
+        return send_file(buf, mimetype='application/pdf',
+                         as_attachment=True, download_name=f'{safe_name}_liquidaciones.pdf')
+    else:
+        return jsonify({'error': 'Formato no valido'}), 400
+
+
 @app.route('/api/tabla/<name>')
 @pin_required
 def api_tabla_root(name):
@@ -538,6 +860,10 @@ td.n{text-align:right;font-variant-numeric:tabular-nums} td.d{color:var(--ylw)} 
 .sec{margin-top:20px} .sec h3{font-size:14px;margin-bottom:10px;color:var(--tx)}
 .liq-row:hover{background:var(--s2)}
 .brc{font-size:12px;color:var(--tx2);margin-bottom:12px} .brc a{color:var(--ac);cursor:pointer;text-decoration:none} .brc a:hover{text-decoration:underline}
+.dl-bar{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.dl-bar span{font-size:11px;color:var(--tx2);margin-right:4px}
+.dl-btn{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;background:var(--s1);border:1px solid var(--brd);border-radius:5px;color:var(--tx);cursor:pointer;font-size:11px;text-decoration:none;transition:all .15s}
+.dl-btn:hover{border-color:var(--ac);color:var(--ac)} .dl-btn .ico{font-size:13px}
 .menu-btn{display:none;background:none;border:1px solid var(--brd);border-radius:5px;color:var(--tx);font-size:20px;padding:2px 8px;cursor:pointer;line-height:1}
 .sb-overlay{display:none}
 .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -591,6 +917,17 @@ const PS=50;
 let S={v:'dash',empresas:[],dirs:[],lk:{},cur:null,tab:null,sc:null,sa:true,ft:'',pg:0,_d:null};
 
 async function api(u){const r=await fetch(u);return r.json()}
+
+function dlBar(dir,tab){
+  return '<div class="dl-bar"><span>Descargar:</span>'
+    +'<a class="dl-btn" href="/api/empresa/'+dir+'/export/'+tab+'/excel"><span class="ico">&#128196;</span> Excel</a>'
+    +'<a class="dl-btn" href="/api/empresa/'+dir+'/export/'+tab+'/pdf"><span class="ico">&#128462;</span> PDF</a></div>';
+}
+function dlBarEmp(dir,num){
+  return '<div class="dl-bar"><span>Descargar:</span>'
+    +'<a class="dl-btn" href="/api/empresa/'+dir+'/empleado/'+num+'/export/excel"><span class="ico">&#128196;</span> Excel</a>'
+    +'<a class="dl-btn" href="/api/empresa/'+dir+'/empleado/'+num+'/export/pdf"><span class="ico">&#128462;</span> PDF</a></div>';
+}
 
 async function init(){
   const [emp,lk]=await Promise.all([api('/api/empresas'),api('/api/lookups')]);
@@ -754,7 +1091,8 @@ async function empTabContent(tab,data,dir){
 
 function renderEmpGeneral(ct,data){
   const e=data.empresa, c=data.contrib, lk=S.lk;
-  let h='<div class="sec"><h3>Datos de la Empresa</h3><div class="det">';
+  let h=dlBar(S.cur,'general');
+  h+='<div class="sec"><h3>Datos de la Empresa</h3><div class="det">';
   const pairs=[
     ['Nombre',e.NOMBRE],['Fantasia',e.FANTASIA],['Giro',e.GIRO||c.GIRO],
     ['Direccion',c.DOM_CONS||e.DIR],['Dir. Fiscal',c.DOM_FIS],['Telefono',c.TEL||e.TEL],
@@ -802,7 +1140,8 @@ function renderEmpGeneral(ct,data){
 async function renderEmpEmpleados(ct,dir){
   ct.innerHTML='<div class="ld">Cargando empleados...</div>';
   const emps=await api('/api/empresa/'+dir+'/empleados');
-  let h='<div class="tw"><div class="tb"><input placeholder="Buscar empleado..." oninput="fltTbl(this.value)"><span class="nf">'+emps.length+' empleados</span></div>';
+  let h=dlBar(dir,'empleados');
+  h+='<div class="tw"><div class="tb"><input placeholder="Buscar empleado..." oninput="fltTbl(this.value)"><span class="nf">'+emps.length+' empleados</span></div>';
   h+='<div id="tblC"></div></div>';
   ct.innerHTML=h;
   S._tblData=emps;S.ft='';S.pg=0;S.sc=null;
@@ -847,6 +1186,7 @@ async function showEmpleado(dir,num,fromPop){
 
   let h='<div class="brc"><a onclick="renderDash()">Dashboard</a> &rsaquo; <a onclick="showEmp(\''+dir+'\')">'+esc(empNm)+'</a> &rsaquo; '+esc(e._nombre_completo)+'</div>';
   h+='<h2>'+esc(e._nombre_completo)+' <small>Empleado #'+e.NUMERO+'</small></h2>';
+  h+=dlBarEmp(dir,num);
 
   // Employee info
   h+='<div class="det">';
@@ -934,7 +1274,8 @@ async function showEmpleado(dir,num,fromPop){
 async function renderEmpLiqs(ct,dir){
   ct.innerHTML='<div class="ld">Cargando liquidaciones...</div>';
   const data=await api('/api/empresa/'+dir+'/liquidaciones');
-  let h='<div class="tw"><div class="tb"><input placeholder="Buscar..." oninput="fltTbl(this.value)"><span class="nf">'+data.length+' liquidaciones</span></div>';
+  let h=dlBar(dir,'liquidaciones');
+  h+='<div class="tw"><div class="tb"><input placeholder="Buscar..." oninput="fltTbl(this.value)"><span class="nf">'+data.length+' liquidaciones</span></div>';
   h+='<div id="tblC"></div></div>';
   ct.innerHTML=h;
   S._tblData=data;S.ft='';S.pg=0;S.sc=null;
@@ -968,8 +1309,8 @@ function renderLiqTbl(){
 async function renderEmpBoletas(ct,dir){
   ct.innerHTML='<div class="ld">Cargando boletas BPS...</div>';
   const data=await api('/api/empresa/'+dir+'/boletas');
-  if(!data.length){ct.innerHTML='<div class="ld">Sin boletas BPS</div>';return;}
-  let h='';
+  if(!data.length){ct.innerHTML=dlBar(dir,'boletas')+'<div class="ld">Sin boletas BPS</div>';return;}
+  let h=dlBar(dir,'boletas');
   for(const b of data){
     h+='<div class="tw" style="margin-bottom:12px"><div class="tb">'
       +'<b>Boleta '+(b.SEYNROBOL||'')+'</b>'
