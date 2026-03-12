@@ -1,0 +1,3 @@
+FOR %%1 IN (A:*.BPS) DO VERIFICA %%1
+DIR A:
+

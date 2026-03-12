@@ -1,0 +1,7 @@
+<FOCERINI>
+1A0118107      020105850017  MOSSO LAPEYRE, MARIA ESTHER             T. GONZALEZ 320                                                                 02                  43362141       SILVANA FERRARI                    
+2silferrari@adinet.com.uy                                    092014   1        8911.42          89.11
+4  1DO49207081        ESTABLE                       MOSSO                         AGUSTIN                       MARIO                         15091994 1 1 3 126 1 30   8911.42      0.00   8911.42     89.11 1 3      0.00
+5  1DO49207081                                                                         130092014
+6  1DO49207081                                                                                                       43362141                      01102012
+<FOCERFIN>

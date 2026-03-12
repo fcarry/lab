@@ -1,0 +1,6 @@
+<FOCERINI>
+13207546       020128510018  GALLO LUGANO, FRANCISCO MARCELO Y OTRA  T. GONZALEZ 320                                                                 02                  43321446       SILVANA FERRARI                    
+2silferrari@adinet.com.uy                                    102014   1        7153.91          71.54
+4  1DO26830950        LOPEZ                         ORTIZ                         JUAN                          CARLOS                        13121955 1 1 3 126 1 30   7153.91      0.00   7153.91     71.54 1 3      0.00
+6  1DO26830950                                                                                                       43321446                      26022014
+<FOCERFIN>

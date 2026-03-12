@@ -1,0 +1,138 @@
+
+          Estructura de EMPLEADO          Estructura de EMPLEADO          Estructura de EMPLEADO          ______________________
+
+          Campo          Tipo           Ancho     Decimales
+          --------------------------------------------------
+
+          NUMERO         Numerico                6         0
+          APELLIDO1      Caracter               20         0
+          APELLIDO2      Caracter               20         0
+          NOMBRE1        Caracter               20         0
+          NOMBRE2        Caracter               20         0
+          DIREC          Caracter               30         0
+          TIP_SUEL       Caracter                1         0
+          SUELD          Numerico               14         4
+          HORA_DIA       Numerico                5         2
+          FEC_ING        Fecha                   8         0
+          FEC_EGR        Fecha                   8         0
+          MUTUAL         Caracter               15         0
+          CARGO          Caracter               20         0
+          CED_IDEN       Caracter               15         0
+          SEXO           Caracter               10         0
+          FEC_NAC        Fecha                   8         0
+          CREDENC        Caracter               10         0
+          EST_CIV        Caracter               10         0
+          HORARIO        Caracter               40         0
+          DESCANSO       Caracter               30         0
+          EGRESO         Caracter                1         0
+          CAPATAZ        Caracter                1         0
+          CAJA           Caracter                1         0
+          CODIGO         Caracter                4         0
+          CIUDAD         Caracter               20         0
+          DEPARTAM       Caracter               20         0
+          SEXONACIO      Caracter                1         0
+          PROPINA        Caracter                1         0
+          SECTOR         Caracter                3         0
+          COMENTARIO     Memo                   10         0
+          LEY14411       Caracter                1         0
+          JORNALERO      Caracter                1         0
+          PROPOR         Caracter                1         0
+          COMPORTEX      Caracter               20         0
+          COMPORC        Numerico                6         2
+          DESPORTEX      Caracter               20         0
+          DESPORC        Numerico                6         2
+          COMFIJTEX      Caracter               20         0
+          COMFIJO        Numerico               14         2
+          DESFIJTEX      Caracter               20         0
+          DESFIJO        Numerico               14         2
+          GRACOMPOR      Caracter                1         0
+          GRADESPOR      Caracter                1         0
+          GRACOMFIJ      Caracter                1         0
+          GRADESFIJ      Caracter                1         0
+          LITERAL        Numerico                1         0
+          RET_JUD        Numerico                6         2
+          LEYDEST        Caracter               20         0
+          PRIM_ANT       Caracter                1         0
+          MENORSUB       Numerico               14         2
+          SEGSAL         Caracter                2         0
+          VINFUN         Caracter                2         0
+          CAUSAL         Caracter                2         0
+          COMPESP        Caracter                2         0
+
+
+
+
+
+          SMN            Caracter                1         0
+          NACIONAL       Caracter                1         0
+          QUEBRANTO      Numerico               15         2
+          DIASSERDOM     Numerico                5         2
+          INT_O_PAR      Caracter                1         0
+          ACUM_LAB       Caracter                1         0
+          HORASEMAN      Numerico                2         0
+          NRO_OBRA       Numerico                6         0
+          BFCPROP        Numerico                2         0
+          HERRAMSN       Caracter                1         0
+          BALANCSN       Caracter                1         0
+          CATCONST       Numerico                5         0
+          ENTR_MAN       Caracter                5         0
+          SALI_MAN       Caracter                5         0
+          ENTR_TAR       Caracter                5         0
+          SALI_TAR       Caracter                5         0
+          ENTR_DES       Caracter                5         0
+          SALI_DES       Caracter                5         0
+          ULTAUM         Fecha                   8         0
+          PARAMET        Caracter                1         0
+          CODEXO         Numerico                2         0
+          COMPLEM        Numerico                6         0
+          FECINGMTSS     Fecha                   8         0
+          LEYENDAGEN     Caracter               60         0
+          COMPPORNOL     Caracter                1         0
+          DESCPORNOL     Caracter                1         0
+          COMPPORPRO     Caracter                1         0
+          COMPFIJPRO     Caracter                1         0
+          LEYENDAGE2     Caracter               60         0
+          TIPSUELPRI     Caracter                1         0
+          LEYENDAGE3     Caracter               60         0
+          LEYENDAGE4     Caracter               60         0
+          CTABANCO       Caracter               12         0
+          NOMCTABANC     Caracter               35         0
+          REFERENCIA     Caracter               16         0
+          CORRAHO        Caracter                1         0
+          MONEDA         Caracter                1         0
+          PARTFIJSUE     Caracter                1         0
+          SUELD2         Numerico               14         4
+          SUELD3         Numerico               14         4
+          GRAV2          Caracter                1         0
+          GRAV3          Caracter                1         0
+          TEXTO2         Caracter               20         0
+          TEXTO3         Caracter               20         0
+          DEVOL2         Caracter                1         0
+          DEVOL3         Caracter                1         0
+          MENACARGO      Numerico                5         2
+          DEDUCCION      Numerico               14         2
+          MINIMOIMP      Caracter                1         0
+          PAIS           Numerico                5         0
+          TIPODOC        Caracter                2         0
+          FECHAVISO      Fecha                   8         0
+          AVISO          Caracter               70         0
+          AVISO2         Caracter               70         0
+
+
+
+
+
+          AVISO3         Caracter               70         0
+          GRADUAL2       Caracter                1         0
+          GRADUAL3       Caracter                1         0
+          GRADUAL4       Caracter                1         0
+          GRADUAL5       Caracter                1         0
+          FECHAPRIMA     Fecha                   8         0
+          TRABPERMA      Caracter                1         0
+          CANTJORN       Numerico               14         0
+          LEYENDAGE5     Caracter               60         0
+          LEYENDAGE6     Caracter               60         0
+          CASOPRIMA      Numerico                1         0
+          SUCURSAL       Numerico                3         0
+
+          --------------------------------------------------

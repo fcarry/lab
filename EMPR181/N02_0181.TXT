@@ -1,0 +1,8 @@
+<FOCERINI>
+1A010002500000002002684001900FIORENTIN MENEGHETTI, JOSE              T. GONZALEZ 320                                                                 02                  23002          SILVANA FERRARI                    
+4  1DO28354233        FIORENTIN                     MENEGHETTI                    JOSE                                                        01091947 1 1 3 1 0 1 30      0.00      0.00      0.00      0.00 0 0
+4  1DO28400701        RODRIGUEZ                     IMBERT                        JUAN                          CARLOS                        11061947 1 1 3 126 1 30   7283.00      0.00   7283.00   2913.00 2 1
+4  1DO34644575        ZEBALLOS                      ANCHORENA                     CARLOS                        MIGUEL                        13061970 1 1 3 126 2 20   5826.00      0.00   5826.00   2330.00 2 1
+4  1DO47763821        POSSE                         ARTIGAS                       LUIS                          ALBERTO                       08031982 1 1 3 126 2 20   5826.00      0.00   5826.00     58.00 1 3
+2                                                            022010   3       18935.00        5301.00
+<FOCERFIN>

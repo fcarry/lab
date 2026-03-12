@@ -1,0 +1,12 @@
+<FOCERINI>
+1607395        020187120018  ASOCIACION COMERCIAL E IND. DE CANELONESTOLENTINO GONZALEZ 320                                                          02                  22521          SILVANA FERRARI                    
+2silferrari@adinet.com.uy                                    042016   4       95254.10         952.54
+4  1DO33725160        FERRARI                       UMPIERREZ                     SILVANA                       ANAHIR                        18031964 2 1 1 1 0 1 30  37149.55      0.00  37149.55    371.50 1 3      0.00
+6  1DO33725160        SARAVIA 864 APT. 003 CANELONES                                                  CANELONES      22521                         01101988
+4  1DO34944383        CAVALLO                       VEROPALUMBO                   TERESITA                      BEATRIZ                       17121966 2 1 1 1 0 1 30  35996.43      0.00  35996.43    359.96 1 3      0.00
+6  1DO34944383        MOTIVOS DE PROTEO CASI FUSTER CANELONES                                         CANELONES      22521                         01121985
+4  1DO43624021        DIAZ                          SOLOMITA                      ANA                           CARINA                        28091979 2 1 1 1 0 1 11   1971.69      0.00   1971.69     19.72 1 3      0.00
+6  1DO43624021        RUTA 107 KLM. 20.800 CANELON CHICO                                              CANELONES      22521                         01092015
+4  1DO47163772        COLLAZO                       CARLINI                       MARIA                         GIANINA                       11101985 2 1 1 1 0 1 30  20136.43      0.00  20136.43    201.36 1 3      0.00
+6  1DO47163772        MONEGAL 309 CANELONES                                                           CANELONES      22521                         01022009
+<FOCERFIN>
